@@ -60,7 +60,9 @@ class IndexController {
 
             await this.generateStory(prompt, res);
         } catch (error) {
-            res.status(500).json({ error: 'Failed to generate story' });
+            if (!res.headersSent) {
+                res.status(500).json({ error: 'Failed to generate story' });
+            }
         }
     }
 
@@ -71,84 +73,88 @@ class IndexController {
      * @returns {Promise<void>} - The generated story content.
      */
     async generateStory(prompt: string, res: Response): Promise<void> {
-        const responseIterator = await ollama.generate({
-            model: 'mistral',
-            prompt: prompt, 
-            /* VERSION 1:
-            `
-                    {
-                        "name": "InspectorY",
-                        "description": "A tenacious detective who will stop at nothing to uncover the truth."
-                    }
-                ]
-            }
-            Example:
-            JSON
-            {
-                "title": "The Enchanted Forest",
-                "chapters": [
-                    {
-                        "chapter_title": "The Journey Begins",
-                        "content": "Once upon a time..."
+        try {
+            const responseIterator = await ollama.generate({
+                model: 'mistral',
+                prompt: prompt,
+                /* VERSION 1:
+                `
+                        {
+                            "name": "InspectorY",
+                            "description": "A tenacious detective who will stop at nothing to uncover the truth."
+                        }
+                    ]
+                }
+                Example:
+                JSON
+                {
+                    "title": "The Enchanted Forest",
+                    "chapters": [
+                        {
+                            "chapter_title": "The Journey Begins",
+                            "content": "Once upon a time..."
+                        },
+                        {
+                            "chapter_title": "The Wizard's Hut",
+                            "content": "They travelled deep into the forest..."
+                        }
+                    ]
+                }`,*/
+
+                /* VERSION 2 (better for visualization on frontend):
+                `Write a story based on the following elements:
+                {
+                    "genre": "mystery",
+                    "tone": "dramatic",
+                    "themes": ["whodunit", "deception", "familysecrets"],
+                    "length": "novella",
+                    "setting": {
+                        "city": "Paris",
+                        "era": "1920s"
                     },
-                    {
-                        "chapter_title": "The Wizard's Hut",
-                        "content": "They travelled deep into the forest..."
-                    }
-                ]
-            }`,*/
+                    "characters": [
+                        {
+                            "name": "MadameX",
+                            "description": "A glamorous socialite with a hidden past."
+                        },
+                        {
+                            "name": "InspectorY",
+                            "description": "A tenacious detective who will stop at nothing to uncover the truth."
+                        }
+                    ]
+                }
+                Ensure the story has a clear beginning, middle and end, with proper pacing and character development. The dialogue should feel natural, and the narrative should align with the tone and genre specified. Provide vivid descriptions, build tension appropriately, and include a satisfying conclusion. Return it in simple text putting its title at the begining and separate from its chapters by an empty line. Then return each chapter separated by the other by an empty line and with their title return at the begin in a separate line.
+                Example:
+                "The Enchanted Forest
+                
+                The Journey Begins
+                Once upon a time...
 
-            /* VERSION 2 (better for visualization on frontend):
-            `Write a story based on the following elements:
-            {
-                "genre": "mystery",
-                "tone": "dramatic",
-                "themes": ["whodunit", "deception", "familysecrets"],
-                "length": "novella",
-                "setting": {
-                    "city": "Paris",
-                    "era": "1920s"
-                },
-                "characters": [
-                    {
-                        "name": "MadameX",
-                        "description": "A glamorous socialite with a hidden past."
-                    },
-                    {
-                        "name": "InspectorY",
-                        "description": "A tenacious detective who will stop at nothing to uncover the truth."
-                    }
-                ]
+                Wizard's Hut
+                They travelled deep into the forest..."
+                `,*/
+                format: "json",
+                stream: true
+            });
+            // res.write(''); // Start of JSON array
+
+            // let isFirstChunk = true;
+
+            for await (const response of responseIterator) {
+                // if (!isFirstChunk) {
+                //     res.write(','); // Separate JSON objects with a comma
+                // }
+                res.write(response.response);
+                // isFirstChunk = false;
             }
-            Ensure the story has a clear beginning, middle and end, with proper pacing and character development. The dialogue should feel natural, and the narrative should align with the tone and genre specified. Provide vivid descriptions, build tension appropriately, and include a satisfying conclusion. Return it in simple text putting its title at the begining and separate from its chapters by an empty line. Then return each chapter separated by the other by an empty line and with their title return at the begin in a separate line.
-            Example:
-            "The Enchanted Forest
-            
-            The Journey Begins
-            Once upon a time...
 
-            Wizard's Hut
-            They travelled deep into the forest..."
-            `,*/
-            format: "json",
-            stream: true
-        });
-
-        
-        // res.write(''); // Start of JSON array
-
-        // let isFirstChunk = true;
-
-        for await (const response of responseIterator) {
-            // if (!isFirstChunk) {
-            //     res.write(','); // Separate JSON objects with a comma
-            // }
-            res.write(response.response);
-            // isFirstChunk = false;
+            // res.write(']'); // End of JSON array
+            res.end();
+        } catch (error) {
+            if (!res.headersSent) {
+                res.status(500).json({ error: 'Failed to generate story' });
+            }
         }
-
-        // res.write(']'); // End of JSON array
-        res.end();
     }
 }
 

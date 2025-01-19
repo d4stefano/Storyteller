@@ -405,7 +405,7 @@ p {
 @media (min-width: 768px) {
   .home {
     padding: 80px 20px 20px 20px;
-    margin-top: 40px;
+    margin-top: 80px;
   }
 
   form {
