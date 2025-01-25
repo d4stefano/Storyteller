@@ -9,11 +9,11 @@ class IndexController {
      */
     async getStory(req: Request, res: Response) {
         try {
-            const { genre, tone, themes, length, settings, characters } = req.body;
+            const { ageRange, genre, tone, themes, length, settings, characters } = req.body;
             let prompt = "";
             
             // Construct the story customization JSON object based on the provided elements
-            let storyCustomization = "{";
+            let storyCustomization = `{"reader age range": "${ageRange}",`;
             if (genre) {
                 storyCustomization += `"genre": "${genre}",`;
             }
@@ -33,55 +33,31 @@ class IndexController {
                 storyCustomization += `"characters": ${JSON.stringify(characters)},`;
             }
 
-            // Used the customixed prompt if any elements were provided, otherwise use the default prompt
-            if (storyCustomization.length > 1) {
-                storyCustomization = storyCustomization.replace(/,$/, '}'); // Replace the trailing comma with the closing bracket
-                prompt += `Write a story based on the following elements: ${storyCustomization}
-                    Ensure the story has a clear beginning, middle and end, with proper pacing and character development. The dialogue should feel natural, and the narrative should align with the tone and genre specified. Provide vivid descriptions, build tension appropriately, and include a satisfying conclusion. 
-                    Return it in a JSON object with the following structure:
-                        title (string): The title of the book.
-                        chapters (array of objects): An array where each object represents a chapter. Each chapter object has the following properties:
-                        chapter_title (string): The title of the chapter.
-                        content (string): The textual content of the chapter.
-                    Example:
-                    JSON
-                    {
-                        "title": "The Enchanted Forest",
-                        "chapters": [
-                            {
-                            "chapter_title": "The Journey Begins",
-                            "content": "Once upon a time..."
-                            },
-                            {
-                            "chapter_title": "The Wizard's Hut",
-                            "content": "They travelled deep into the forest..."
-                            }
-                        ]
-                    }`;
-                console.log('Prompt:', prompt);
-            } else {
-                prompt = `Write a story with a clear beginning, middle and end, with proper pacing and character development. The dialogue should feel natural, and the narrative should align with the tone and genre you will decide. Provide vivid descriptions, build tension appropriately, and include a satisfying conclusion.
-                        Return it in a JSON object with the following structure:
-                            title (string): The title of the book.
-                            chapters (array of objects): An array where each object represents a chapter. Each chapter object has the following properties:
-                            chapter_title (string): The title of the chapter.
-                            content (string): The textual content of the chapter.
-                        Example:
-                        JSON
+            
+            storyCustomization = storyCustomization.replace(/,$/, '}'); // Replace the trailing comma with the closing bracket
+            prompt += `Write a story based on the following elements: ${storyCustomization}
+                Ensure the story has a clear beginning, middle and end, with proper pacing and character development. The dialogue should feel natural, and the narrative should align with the reader age range, tone and genre selected. Provide vivid descriptions, build tension appropriately, and include a satisfying conclusion. 
+                Return it in a JSON object with the following structure:
+                    title (string): The title of the book.
+                    chapters (array of objects): An array where each object represents a chapter. Each chapter object has the following properties:
+                    chapter_title (string): The title of the chapter.
+                    content (string): The textual content of the chapter.
+                Example:
+                JSON
+                {
+                    "title": "The Enchanted Forest",
+                    "chapters": [
                         {
-                            "title": "The Enchanted Forest",
-                            "chapters": [
-                                {
-                                "chapter_title": "The Journey Begins",
-                                "content": "Once upon a time..."
-                                },
-                                {
-                                "chapter_title": "The Wizard's Hut",
-                                "content": "They travelled deep into the forest..."
-                                }
-                            ]
-                        }`;
-            };
+                        "chapter_title": "The Journey Begins",
+                        "content": "Once upon a time..."
+                        },
+                        {
+                        "chapter_title": "The Wizard's Hut",
+                        "content": "They travelled deep into the forest..."
+                        }
+                    ]
+                }`;
+            // console.log('Prompt:', prompt);
 
             await this.generateStory(prompt, res);
         } catch (error) {
@@ -217,6 +193,7 @@ class IndexController {
     async postChat(req: Request, res: Response) {
         try {
             const messages: Message[] = req.body.messages;
+            console.log('Messages:', messages);
             await this.chat(messages, res);
         } catch (error) {
             if (!res.headersSent) {

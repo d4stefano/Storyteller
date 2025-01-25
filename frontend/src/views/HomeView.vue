@@ -6,21 +6,28 @@
       <p>Like a wise owl with a digital heart, Owl-e helps you create captivating stories.</p>
       <form @submit.prevent="generateStory">
         <div class="clean-form-container">
-          <button v-if="isFormUpdated" type="button" @click="resetForm" class="icon-button reset-button">
+          <button v-if="isFormUpdated" type="button" @click="resetForm" class="reset-button">
             Clean Form
           </button>
         </div>
 
+        <label for="ageRange">Age Range (for story content):</label>
+        <select v-model="ageRange" id="ageRange" @change="updateSelectors">
+          <option value="children">Children (e.g., 0-12)</option>
+          <option value="teenager">Teenager/Adolescents (e.g., 13-17)</option>
+          <option value="adults">Adults (e.g., 18+)</option>
+        </select>
+
         <label for="genre">Genre:</label>
         <select v-model="genre" id="genre">
-          <option v-for="genreOption in genres" :key="genreOption.value" :value="genreOption.value">
+          <option v-for="genreOption in filteredGenres" :key="genreOption.value" :value="genreOption.value">
             {{ genreOption.label }}
           </option>
         </select>
 
         <label for="tone">Tone:</label>
         <select v-model="tone" id="tone">
-          <option v-for="toneOption in tones" :key="toneOption.value" :value="toneOption.value">
+          <option v-for="toneOption in filteredTones" :key="toneOption.value" :value="toneOption.value">
             {{ toneOption.label }}
           </option>
         </select>
@@ -78,14 +85,13 @@
         </button>
       </form>
       <div v-if="story" class="tabs">
-        <button @click="currentView = 'story'" :class="{ active: currentView === 'story' }">Story</button>
+        <button @click="currentView = 'story'" :class="{ active: currentView === 'story' }">{{ followUpResponse ? 'Original Story' : 'Story' }}</button>
         <button v-if="followUpResponse" @click="currentView = 'followUp'" :class="{ active: currentView === 'followUp' }">Refined Story</button>
       </div>
       <div v-if="story" class="story-container">
         <div v-if="currentView === 'story'">
           <div class="story-content">
             <p>{{ story }}</p>
-            <!--<p>{{ history[currentTab].content }}</p>-->
           </div>
         </div>
         <div v-if="currentView === 'followUp' && followUpResponse">
@@ -117,27 +123,60 @@ export default defineComponent({
     const length = ref('');
     const settings = ref([{ type: '', value: '' }]);
     const characters = ref([{ name: '', description: '' }]);
+    const ageRange = ref('children'); // Default to 'children'
     const story = ref('');
     const isGeneratingStory = ref(false);
     const isSendingFollowUp = ref(false);
     const history = ref<{ role: string, content: string }[]>([]); // Store the interaction history
     const followUpMessage = ref('');
     const followUpResponse = ref('');
-    const currentTab = ref(0);
     const currentView = ref('story'); // Track the current view (story or follow-up)
     const homeCard = ref<HTMLElement | null>(null);
+
+    const filteredGenres = computed(() => {
+      if (ageRange.value === 'children') {
+        return genres.filter(genreOption => genreOption.ageMinimalRequirement === 'children');
+      } else if (ageRange.value === 'teenager') {
+        return genres.filter(genreOption => genreOption.ageMinimalRequirement === 'teenager' || genreOption.ageMinimalRequirement === 'children');
+      } else {
+        return genres;
+      }
+    });
+
+    const filteredTones = computed(() => {
+      if (ageRange.value === 'children') {
+        return tones.filter(toneOption => toneOption.ageMinimalRequirement === 'children');
+      } else if (ageRange.value === 'teenager') {
+        return tones.filter(toneOption => toneOption.ageMinimalRequirement === 'teenager' || toneOption.ageMinimalRequirement === 'children');
+      } else {
+        return tones;
+      }
+    });
 
     const isFormUpdated = computed(() => {
       return genre.value || tone.value || length.value || themes.value.some(theme => theme.value) || settings.value.some(setting => setting.type || setting.value) || characters.value.some(character => character.name || character.description);
     });
 
     const resetForm = () => {
+      ageRange.value = 'children';
       genre.value = '';
       tone.value = '';
       themes.value = [{ value: '' }];
       length.value = '';
       settings.value = [{ type: '', value: '' }];
       characters.value = [{ name: '', description: '' }];
+    };
+
+    const updateSelectors = () => {
+      const newFilteredGenres = filteredGenres.value;
+      if (!newFilteredGenres.some(genreOption => genreOption.value === genre.value)) {
+        genre.value = ''; // Reset genre if not present in the new age range
+      }
+
+      const newFilteredTones = filteredTones.value;
+      if (!newFilteredTones.some(toneOption => toneOption.value === tone.value)) {
+        tone.value = ''; // Reset tone if not present in the new age range
+      }
     };
 
     const addTheme = () => {
@@ -167,7 +206,14 @@ export default defineComponent({
     const generateStory = async () => {
       isGeneratingStory.value = true;
       try {
+        // Clean up history and reset card and tab status
+        history.value = [];
+        story.value = '';
+        followUpResponse.value = '';
+        currentView.value = 'story';
+
         const customization = {
+          ageRange: ageRange.value,
           genre: genre.value,
           tone: tone.value,
           themes: themes.value.map(theme => theme.value),
@@ -205,8 +251,7 @@ export default defineComponent({
         }
 
         story.value = storyContent; // Final update with the complete story
-        history.value.push({ role: 'system', content: storyContent }); // Store the generated story in history
-        currentTab.value = history.value.length - 1; // Set the current tab to the latest story part
+        history.value.push({ role: 'assistant', content: storyContent }); // Store the generated story in history
       } catch (error) {
         console.error('Error during fetch:', error); // Log the error details
         story.value = `Error: ${(error as Error).message}`;
@@ -252,7 +297,6 @@ export default defineComponent({
         history.value.push({ role: 'user', content: followUpMessage.value }); // Store the follow-up message in history
         history.value.push({ role: 'assistant', content: chatContent }); // Store the chat response in history
         followUpMessage.value = ''; // Clear the follow-up input field
-        currentTab.value = history.value.length - 1; // Set the current tab to the latest story part
       } catch (error) {
         console.error('Error during fetch:', error); // Log the error details
         followUpResponse.value += `\nError: ${(error as Error).message}`;
@@ -277,15 +321,18 @@ export default defineComponent({
       length,
       settings,
       characters,
+      ageRange,
+      filteredGenres,
+      filteredTones,
       story,
       isGeneratingStory,
       isSendingFollowUp,
       isFormUpdated,
       resetForm,
+      updateSelectors,
       history,
       followUpMessage,
       followUpResponse,
-      currentTab,
       currentView,
       addTheme,
       removeTheme,
@@ -334,7 +381,9 @@ form {
   display: flex;
   justify-content: center;
   width: 100%;
-  height: 33px; /* Ensure space is always present */
+  height: 28px; /* Ensure space is always present */
+  align-items: center;
+  margin-top: 10px;
 }
 
 .label-group {
@@ -407,8 +456,6 @@ button {
 
 .reset-button {
   margin-bottom: 0;
-  margin-top: 20px;
-  height: 25px;
   padding: 6px 20px;
 }
 
