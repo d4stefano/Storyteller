@@ -6,4 +6,5 @@ const indexController = new IndexController();
 
 export function setRoutes(app: Router) {
     app.post('/api/story', indexController.getStory.bind(indexController));
+    app.post('/api/chat', indexController.postChat.bind(indexController));
 }

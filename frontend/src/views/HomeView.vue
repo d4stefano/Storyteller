@@ -73,13 +73,32 @@
           </button>
         </div>
 
-        <button type="submit" class="submit-button" :disabled="isLoading">
-          {{ isLoading ? 'Generating...' : 'Generate Story' }}
+        <button type="submit" class="submit-button" :disabled="isGeneratingStory">
+          {{ isGeneratingStory ? 'Generating...' : 'Generate Story' }}
         </button>
       </form>
+      <div v-if="story" class="tabs">
+        <button @click="currentView = 'story'" :class="{ active: currentView === 'story' }">Story</button>
+        <button v-if="followUpResponse" @click="currentView = 'followUp'" :class="{ active: currentView === 'followUp' }">Refined Story</button>
+      </div>
       <div v-if="story" class="story-container">
-        <h2>Your Story:</h2>
-        <p>{{ story }}</p>
+        <div v-if="currentView === 'story'">
+          <div class="story-content">
+            <p>{{ story }}</p>
+            <!--<p>{{ history[currentTab].content }}</p>-->
+          </div>
+        </div>
+        <div v-if="currentView === 'followUp' && followUpResponse">
+          <div class="story-content">
+            <p>{{ followUpResponse }}</p>
+          </div>
+        </div>
+      </div>
+      <div v-if="!isGeneratingStory && story" class="follow-up-container">
+        <input v-model="followUpMessage" placeholder="Refine your story" />
+        <button @click="sendFollowUp" :disabled="isSendingFollowUp">
+          {{ isSendingFollowUp ? 'Refining...' : 'Refine' }}
+        </button>
       </div>
     </div>
   </div>
@@ -99,7 +118,13 @@ export default defineComponent({
     const settings = ref([{ type: '', value: '' }]);
     const characters = ref([{ name: '', description: '' }]);
     const story = ref('');
-    const isLoading = ref(false);
+    const isGeneratingStory = ref(false);
+    const isSendingFollowUp = ref(false);
+    const history = ref<{ role: string, content: string }[]>([]); // Store the interaction history
+    const followUpMessage = ref('');
+    const followUpResponse = ref('');
+    const currentTab = ref(0);
+    const currentView = ref('story'); // Track the current view (story or follow-up)
     const homeCard = ref<HTMLElement | null>(null);
 
     const isFormUpdated = computed(() => {
@@ -140,21 +165,23 @@ export default defineComponent({
     };
 
     const generateStory = async () => {
-      isLoading.value = true;
+      isGeneratingStory.value = true;
       try {
+        const customization = {
+          genre: genre.value,
+          tone: tone.value,
+          themes: themes.value.map(theme => theme.value),
+          length: length.value,
+          settings: settings.value,
+          characters: characters.value
+        };
+
         const response = await fetch('http://localhost:3000/api/story', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            genre: genre.value,
-            tone: tone.value,
-            themes: themes.value.map(theme => theme.value),
-            length: length.value,
-            settings: settings.value,
-            characters: characters.value,
-          }),
+          body: JSON.stringify(customization),
         });
 
         if (!response.ok) {
@@ -178,11 +205,59 @@ export default defineComponent({
         }
 
         story.value = storyContent; // Final update with the complete story
+        history.value.push({ role: 'system', content: storyContent }); // Store the generated story in history
+        currentTab.value = history.value.length - 1; // Set the current tab to the latest story part
       } catch (error) {
         console.error('Error during fetch:', error); // Log the error details
         story.value = `Error: ${(error as Error).message}`;
       } finally {
-        isLoading.value = false;
+        isGeneratingStory.value = false; // Re-enable the submit button
+      }
+    };
+
+    const sendFollowUp = async () => {
+      isSendingFollowUp.value = true;
+      try {
+        const messages = [...history.value, { role: 'user', content: followUpMessage.value }];
+
+        const response = await fetch('http://localhost:3000/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ messages }),
+        });
+
+        currentView.value = 'followUp'; // Switch to follow-up view
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Fetch error:', response.status, errorText);
+          throw new Error(`Failed to send follow-up: ${response.status} ${errorText}`);
+        }
+
+        if (!response.body) {
+          throw new Error('Response body is null');
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let chatContent = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chatContent += decoder.decode(value, { stream: true });
+          followUpResponse.value = chatContent; // Append the chat response to the follow-up response
+        }
+
+        history.value.push({ role: 'user', content: followUpMessage.value }); // Store the follow-up message in history
+        history.value.push({ role: 'assistant', content: chatContent }); // Store the chat response in history
+        followUpMessage.value = ''; // Clear the follow-up input field
+        currentTab.value = history.value.length - 1; // Set the current tab to the latest story part
+      } catch (error) {
+        console.error('Error during fetch:', error); // Log the error details
+        followUpResponse.value += `\nError: ${(error as Error).message}`;
+      } finally {
+        isSendingFollowUp.value = false; // Re-enable the follow-up button
       }
     };
 
@@ -203,9 +278,15 @@ export default defineComponent({
       settings,
       characters,
       story,
-      isLoading,
+      isGeneratingStory,
+      isSendingFollowUp,
       isFormUpdated,
       resetForm,
+      history,
+      followUpMessage,
+      followUpResponse,
+      currentTab,
+      currentView,
       addTheme,
       removeTheme,
       addSetting,
@@ -213,6 +294,7 @@ export default defineComponent({
       addCharacter,
       removeCharacter,
       generateStory,
+      sendFollowUp,
       homeCard,
     };
   },
@@ -301,7 +383,7 @@ button {
   border: none;
   cursor: pointer;
   font-size: 12px;
-  height: 33px;
+  height: 30px;
   display: flex;
   align-items: flex-start;
 }
@@ -338,14 +420,17 @@ button {
   margin-bottom: 0;
 }
 
-.submit-button {
+.submit-button, .follow-up-container button {
   background-color: #252d44;
   color: white;
+}
+
+.submit-button {
   width: 100%;
   margin-top: 10px;
 }
 
-.submit-button:disabled {
+.submit-button:disabled, .follow-up-container button:disabled {
   background-color: #9E9E9E;
   cursor: not-allowed;
 }
@@ -354,12 +439,46 @@ button {
   background-color: #252d44;
 }
 
-.story-container {
-  margin-top: 20px;
-  padding: 20px;
+.story-container, .follow-up-response-container {
+  position: relative;
+  margin-top: -25px;
   background-color: #fff;
-  border-radius: 10px;
+  border-radius: 0 10px 10px 10px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  z-index: 1;
+}
+
+.tabs {
+  position: relative;
+  display: flex;
+  margin-bottom: 10px;
+  margin-top: 10px;
+  z-index: 0;
+}
+
+.tabs button {
+  font-weight: bold;
+  font-size: 16px;
+  padding: 10px 20px;
+  border-radius: 5px 10px 0 0;
+  cursor: pointer;
+  background-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.tabs button.active {
+  background-color: #fff;
+  color: #252d44;
+}
+
+.story-content {
+  white-space: pre-wrap; /* Preserve whitespace and line breaks */
+}
+
+.follow-up-container {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
 }
 
 h2 {
@@ -393,7 +512,7 @@ p {
 
   button {
     padding: 8px 16px;
-    margin-bottom: 6px;
+    margin-bottom: 10px;
     font-size: 14px;
   }
 
@@ -430,6 +549,10 @@ p {
 @media (min-width: 1024px) {
   .home {
     max-width: 700px;
+  }
+
+  .icon-button {
+    height: 33px;
   }
 }
 
