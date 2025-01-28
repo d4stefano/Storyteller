@@ -81,29 +81,33 @@
         </div>
 
         <button type="submit" class="submit-button" :disabled="isGeneratingStory">
-          {{ isGeneratingStory ? 'Generating...' : 'Generate Story' }}
+          {{ isGeneratingStory ? 'Generating' : 'Generate Story' }}<span v-if="isGeneratingStory" class="blinking-dots"></span>
         </button>
       </form>
       <div v-if="story" class="tabs">
-        <button @click="currentView = 'story'" :class="{ active: currentView === 'story' }">{{ followUpResponse ? 'Original Story' : 'Story' }}</button>
-        <button v-if="followUpResponse" @click="currentView = 'followUp'" :class="{ active: currentView === 'followUp' }">Refined Story</button>
+        <button @click="currentView = 'story'" :class="{ active: currentView === 'story' }">{{ refinementResponse ? 'Original Story' : 'Story' }}</button>
+        <button v-if="refinementResponse" @click="currentView = 'refinement'" :class="{ active: currentView === 'refinement' }">Refined Story</button>
       </div>
       <div v-if="story" class="story-container">
         <div v-if="currentView === 'story'">
           <div class="story-content">
-            <p>{{ story }}</p>
+            <h2>{{ story.title }}</h2>
+            <div v-for="(chapter, index) in story.chapters" :key="index">
+              <h3>{{ chapter.chapterTitle }}</h3>
+              <p>{{ chapter.content }}</p>
+            </div>
           </div>
         </div>
-        <div v-if="currentView === 'followUp' && followUpResponse">
+        <div v-if="currentView === 'refinement' && refinementResponse">
           <div class="story-content">
-            <p>{{ followUpResponse }}</p>
+            <p>{{ refinementResponse }}</p>
           </div>
         </div>
       </div>
-      <div v-if="!isGeneratingStory && story" class="follow-up-container">
-        <input v-model="followUpMessage" placeholder="Refine your story" />
-        <button @click="sendFollowUp" :disabled="isSendingFollowUp">
-          {{ isSendingFollowUp ? 'Refining...' : 'Refine' }}
+      <div v-if="!isGeneratingStory && story" class="refinement-container">
+        <input v-model="refinementMessage" placeholder="Refine your story" />
+        <button @click="sendRefinement" :disabled="isSendingRefinement || !refinementMessage">
+          {{ isSendingRefinement ? 'Refining' : 'Refine' }}<span v-if="isSendingRefinement" class="blinking-dots"></span>
         </button>
       </div>
     </div>
@@ -124,13 +128,13 @@ export default defineComponent({
     const settings = ref([{ type: '', value: '' }]);
     const characters = ref([{ name: '', description: '' }]);
     const ageRange = ref('children'); // Default to 'children'
-    const story = ref('');
+    const story = ref<{ title: string, chapters: { chapterTitle: string, content: string }[] } | null>(null);
     const isGeneratingStory = ref(false);
-    const isSendingFollowUp = ref(false);
+    const isSendingRefinement = ref(false);
     const history = ref<{ role: string, content: string }[]>([]); // Store the interaction history
-    const followUpMessage = ref('');
-    const followUpResponse = ref('');
-    const currentView = ref('story'); // Track the current view (story or follow-up)
+    const refinementMessage = ref('');
+    const refinementResponse = ref('');
+    const currentView = ref('story'); // Track the current view (story or refinement)
     const homeCard = ref<HTMLElement | null>(null);
 
     const filteredGenres = computed(() => {
@@ -208,8 +212,8 @@ export default defineComponent({
       try {
         // Clean up history and reset card and tab status
         history.value = [];
-        story.value = '';
-        followUpResponse.value = '';
+        story.value = null;
+        refinementResponse.value = '';
         currentView.value = 'story';
 
         const customization = {
@@ -236,48 +240,35 @@ export default defineComponent({
           throw new Error(`Failed to generate story: ${response.status} ${errorText}`);
         }
 
-        if (!response.body) {
-          throw new Error('Response body is null');
-        }
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let storyContent = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          storyContent += decoder.decode(value, { stream: true });
-          story.value = storyContent; // Update the story as chunks are received
-        }
-
-        story.value = storyContent; // Final update with the complete story
-        history.value.push({ role: 'assistant', content: storyContent }); // Store the generated story in history
+        const storyData = await response.json();
+        story.value = JSON.parse(storyData); // Parse the JSON string into an object
+        history.value.push({ role: 'assistant', content: JSON.stringify(storyData) }); // Store the generated story in history
       } catch (error) {
         console.error('Error during fetch:', error); // Log the error details
-        story.value = `Error: ${(error as Error).message}`;
+        story.value = { title: 'Error', chapters: [{ chapterTitle: 'Error', content: (error as Error).message }] };
       } finally {
         isGeneratingStory.value = false; // Re-enable the submit button
       }
     };
 
-    const sendFollowUp = async () => {
-      isSendingFollowUp.value = true;
+    const sendRefinement = async () => {
+      isSendingRefinement.value = true;
       try {
-        const messages = [...history.value, { role: 'user', content: followUpMessage.value }];
+        const messages = [...history.value, { role: 'user', content: refinementMessage.value }];
 
         const response = await fetch('http://localhost:3000/api/chat', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ messages }),
+          body: JSON.stringify({ messages, ageRange: ageRange.value }),
         });
 
-        currentView.value = 'followUp'; // Switch to follow-up view
+        currentView.value = 'refinement'; // Switch to refinement view
         if (!response.ok) {
           const errorText = await response.text();
           console.error('Fetch error:', response.status, errorText);
-          throw new Error(`Failed to send follow-up: ${response.status} ${errorText}`);
+          throw new Error(`Failed to send refinement: ${response.status} ${errorText}`);
         }
 
         if (!response.body) {
@@ -291,17 +282,17 @@ export default defineComponent({
           const { done, value } = await reader.read();
           if (done) break;
           chatContent += decoder.decode(value, { stream: true });
-          followUpResponse.value = chatContent; // Append the chat response to the follow-up response
+          refinementResponse.value = chatContent; // Append the chat response to the refinement response
         }
 
-        history.value.push({ role: 'user', content: followUpMessage.value }); // Store the follow-up message in history
+        history.value.push({ role: 'user', content: refinementMessage.value }); // Store the refinement message in history
         history.value.push({ role: 'assistant', content: chatContent }); // Store the chat response in history
-        followUpMessage.value = ''; // Clear the follow-up input field
+        refinementMessage.value = ''; // Clear the refinement input field
       } catch (error) {
         console.error('Error during fetch:', error); // Log the error details
-        followUpResponse.value += `\nError: ${(error as Error).message}`;
+        refinementResponse.value += `\nError: ${(error as Error).message}`;
       } finally {
-        isSendingFollowUp.value = false; // Re-enable the follow-up button
+        isSendingRefinement.value = false; // Re-enable the refinement button
       }
     };
 
@@ -326,13 +317,13 @@ export default defineComponent({
       filteredTones,
       story,
       isGeneratingStory,
-      isSendingFollowUp,
+      isSendingRefinement,
       isFormUpdated,
       resetForm,
       updateSelectors,
       history,
-      followUpMessage,
-      followUpResponse,
+      refinementMessage,
+      refinementResponse,
       currentView,
       addTheme,
       removeTheme,
@@ -341,7 +332,7 @@ export default defineComponent({
       addCharacter,
       removeCharacter,
       generateStory,
-      sendFollowUp,
+      sendRefinement,
       homeCard,
     };
   },
@@ -374,7 +365,7 @@ form {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
+  gap: 5px;
 }
 
 .clean-form-container {
@@ -395,7 +386,6 @@ form {
 }
 
 label {
-  margin-top: 10px;
   font-weight: bold;
 }
 
@@ -429,24 +419,28 @@ button {
 }
 
 .icon-button {
-  border: none;
+  border-width: 1px;
+  border-style: solid;
   cursor: pointer;
   font-size: 12px;
-  height: 30px;
+  height: 33px;
   display: flex;
   align-items: flex-start;
 }
 
 .add-button {
   color: #252d44;
-  border: 1px solid #252d44;
+  border-color: #252d44;
   background-color: #fcfffd;
 }
 
 .add-button:hover {
   color: #252d44;
-  border: 1px solid #252d44;
   background-color: #fcfffd;
+}
+
+.remove-button {
+  border-color: #7e5074;
 }
 
 .remove-button, .reset-button {
@@ -467,7 +461,7 @@ button {
   margin-bottom: 0;
 }
 
-.submit-button, .follow-up-container button {
+.submit-button, .refinement-container button {
   background-color: #252d44;
   color: white;
 }
@@ -477,7 +471,7 @@ button {
   margin-top: 10px;
 }
 
-.submit-button:disabled, .follow-up-container button:disabled {
+.submit-button:disabled, .refinement-container button:disabled {
   background-color: #9E9E9E;
   cursor: not-allowed;
 }
@@ -486,7 +480,27 @@ button {
   background-color: #252d44;
 }
 
-.story-container, .follow-up-response-container {
+.blinking-dots::after {
+  content: '...';
+  animation: blink 1.5s steps(1, end) infinite;
+}
+
+@keyframes blink {
+  0%, 20% {
+    content: '';
+  }
+  40% {
+    content: '.';
+  }
+  60% {
+    content: '..';
+  }
+  80%, 100% {
+    content: '...';
+  }
+}
+
+.story-container, .refinement-response-container {
   position: relative;
   margin-top: -25px;
   background-color: #fff;
@@ -518,14 +532,29 @@ button {
   color: #252d44;
 }
 
+.story-container {
+  padding: 15px;
+}
+
 .story-content {
   white-space: pre-wrap; /* Preserve whitespace and line breaks */
 }
 
-.follow-up-container {
+.refinement-container {
   margin-top: 20px;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
+}
+
+.refinement-container button {
+  width: 100%;
+  margin-bottom: 0px;
+}
+
+.refinement-container input {
+  width: 100%;
+  margin-bottom: 0px;
 }
 
 h2 {
@@ -549,10 +578,6 @@ p {
     transform: translateX(-50%);
   }
 
-  form {
-    gap: 5px;
-  }
-
   select, input {
     padding: 6px;
   }
@@ -563,19 +588,23 @@ p {
     font-size: 14px;
   }
 
-  .story-container {
-    padding: 15px;
+  .refinement-container {
+    margin-top: 20px;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 10px;
+  }
+
+  .refinement-container button {
+    width: 150px;
   }
 }
 
 @media (min-width: 768px) {
   .home {
+    width: 500px;
     padding: 80px 20px 20px 20px;
     margin-top: 80px;
-  }
-
-  form {
-    gap: 10px;
   }
 
   select, input {
@@ -595,7 +624,7 @@ p {
 
 @media (min-width: 1024px) {
   .home {
-    max-width: 700px;
+    width: 600px;
   }
 
   .icon-button {
@@ -604,8 +633,8 @@ p {
 }
 
 @media (min-width: 1200px) {
-  .home {
-    max-width: 1000px;
+  form {
+    gap: 10px;
   }
 }
 </style>

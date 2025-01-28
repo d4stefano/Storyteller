@@ -1,3 +1,7 @@
+/**
+ * This file provides configuration for select components.
+ * It populates the select components with options and filters them based on age range.
+ */
 export const genres = [
   { value: 'dystopian', label: 'Dystopian', ageMinimalRequirement: 'teenager' },
   { value: 'fantasy', label: 'Fantasy', ageMinimalRequirement: 'children' },

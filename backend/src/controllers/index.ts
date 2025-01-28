@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import ollama, { Message } from 'ollama';
+import {Filter} from 'bad-words';
 
 class IndexController {
     /**
@@ -40,7 +41,7 @@ class IndexController {
                 Return it in a JSON object with the following structure:
                     title (string): The title of the book.
                     chapters (array of objects): An array where each object represents a chapter. Each chapter object has the following properties:
-                    chapter_title (string): The title of the chapter.
+                    chapterTitle (string): The title of the chapter.
                     content (string): The textual content of the chapter.
                 Example:
                 JSON
@@ -48,18 +49,18 @@ class IndexController {
                     "title": "The Enchanted Forest",
                     "chapters": [
                         {
-                        "chapter_title": "The Journey Begins",
+                        "chapterTitle": "The Journey Begins",
                         "content": "Once upon a time..."
                         },
                         {
-                        "chapter_title": "The Wizard's Hut",
+                        "chapterTitle": "The Wizard's Hut",
                         "content": "They travelled deep into the forest..."
                         }
                     ]
                 }`;
-            // console.log('Prompt:', prompt);
+            //console.log('Prompt:', prompt);
 
-            await this.generateStory(prompt, res);
+            await this.generateStory(prompt, ageRange, res);
         } catch (error) {
             if (!res.headersSent) {
                 res.status(500).json({ error: 'Failed to generate story' });
@@ -70,87 +71,27 @@ class IndexController {
     /**
      * Calls the Ollama interface to generate a story based on the provided prompt.
      * @param {string} prompt - The prompt to generate the story from.
-     * @param {Response} res - The response object to stream the story to.
-     * @returns {Promise<void>} - The generated story content.
+     * @param {string} ageRange - The age range to be consider for the response.
+     * @param {Response} res - The response object to send the story to.
      */
-    async generateStory(prompt: string, res: Response): Promise<void> {
+    async generateStory(prompt: string, ageRange: string, res: Response) {
         try {
-            const responseIterator = await ollama.generate({
+            const response = await ollama.generate({
                 model: 'mistral',
                 prompt: prompt,
-                /* VERSION 1:
-                `
-                        {
-                            "name": "InspectorY",
-                            "description": "A tenacious detective who will stop at nothing to uncover the truth."
-                        }
-                    ]
-                }
-                Example:
-                JSON
-                {
-                    "title": "The Enchanted Forest",
-                    "chapters": [
-                        {
-                            "chapter_title": "The Journey Begins",
-                            "content": "Once upon a time..."
-                        },
-                        {
-                            "chapter_title": "The Wizard's Hut",
-                            "content": "They travelled deep into the forest..."
-                        }
-                    ]
-                }`,*/
-
-                /* VERSION 2 (better for visualization on frontend):
-                `Write a story based on the following elements:
-                {
-                    "genre": "mystery",
-                    "tone": "dramatic",
-                    "themes": ["whodunit", "deception", "familysecrets"],
-                    "length": "novella",
-                    "setting": {
-                        "city": "Paris",
-                        "era": "1920s"
-                    },
-                    "characters": [
-                        {
-                            "name": "MadameX",
-                            "description": "A glamorous socialite with a hidden past."
-                        },
-                        {
-                            "name": "InspectorY",
-                            "description": "A tenacious detective who will stop at nothing to uncover the truth."
-                        }
-                    ]
-                }
-                Ensure the story has a clear beginning, middle and end, with proper pacing and character development. The dialogue should feel natural, and the narrative should align with the tone and genre specified. Provide vivid descriptions, build tension appropriately, and include a satisfying conclusion. Return it in simple text putting its title at the begining and separate from its chapters by an empty line. Then return each chapter separated by the other by an empty line and with their title return at the begin in a separate line.
-                Example:
-                "The Enchanted Forest
-                
-                The Journey Begins
-                Once upon a time...
-
-                Wizard's Hut
-                They travelled deep into the forest..."
-                `,*/
                 format: "json",
-                stream: true
+                stream: false
             });
-            // res.write(''); // Start of JSON array
 
-            // let isFirstChunk = true;
+            let filteredResponse = response.response;
 
-            for await (const response of responseIterator) {
-                // if (!isFirstChunk) {
-                //     res.write(','); // Separate JSON objects with a comma
-                // }
-                res.write(response.response);
-                // isFirstChunk = false;
+            // Filter the response based on the age range
+            if (ageRange === 'children' || ageRange === 'teenager') {
+                const filter = new Filter();
+                filteredResponse = filter.clean(response.response);
             }
 
-            // res.write(']'); // End of JSON array
-            res.end();
+            res.json(filteredResponse);
         } catch (error) {
             if (!res.headersSent) {
                 res.status(500).json({ error: 'Failed to generate story' });
@@ -161,10 +102,10 @@ class IndexController {
     /**
      * Calls the Ollama chat interface to generate a chat response based on the provided prompt.
      * @param {Message[]} messages - The prompt to generate the chat response from.
+     * @param {string} ageRange - The age range to be consider for the response.
      * @param {Response} res - The response object to stream the chat response to.
-     * @returns {Promise<void>} - The generated chat response content.
      */
-    async chat(messages: Message[], res: Response): Promise<void> {
+    async chat(messages: Message[], ageRange: string, res: Response) {
         try {
             const responseIterator = await ollama.chat({
                 model: 'mistral',
@@ -173,8 +114,18 @@ class IndexController {
                 stream: true
             });
 
+            console.log('Age Range:', ageRange);
+
             for await (const response of responseIterator) {
-                res.write(response.message.content);
+                let filteredResponse = response.message.content;
+
+                // Filter the response based on the age range
+                if (ageRange === 'children' || ageRange === 'teenager') {
+                    const filter = new Filter();
+                    filteredResponse = filter.clean(response.message.content);
+                }
+
+                res.write(filteredResponse);
             }
 
             res.end();
@@ -187,14 +138,15 @@ class IndexController {
 
     /**
      * Handles chat requests and connects to the Ollama chat API.
-     * @param {import('express').Request} req - The request object containing the chat messages.
+     * @param {import('express').Request} req - The request object containing the chat messages and the age range of the conversation.
      * @param {import('express').Response} res - The response object to send the chat response.
      */
     async postChat(req: Request, res: Response) {
         try {
             const messages: Message[] = req.body.messages;
             console.log('Messages:', messages);
-            await this.chat(messages, res);
+            const ageRange: string = req.body.ageRange;
+            await this.chat(messages, ageRange, res);
         } catch (error) {
             if (!res.headersSent) {
                 res.status(500).json({ error: 'Failed to process chat request' });
