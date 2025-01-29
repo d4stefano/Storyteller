@@ -58,7 +58,6 @@ class IndexController {
                         }
                     ]
                 }`;
-            //console.log('Prompt:', prompt);
 
             await this.generateStory(prompt, ageRange, res);
         } catch (error) {
@@ -114,8 +113,6 @@ class IndexController {
                 stream: true
             });
 
-            console.log('Age Range:', ageRange);
-
             for await (const response of responseIterator) {
                 let filteredResponse = response.message.content;
 
@@ -144,7 +141,6 @@ class IndexController {
     async postChat(req: Request, res: Response) {
         try {
             const messages: Message[] = req.body.messages;
-            console.log('Messages:', messages);
             const ageRange: string = req.body.ageRange;
             await this.chat(messages, ageRange, res);
         } catch (error) {
