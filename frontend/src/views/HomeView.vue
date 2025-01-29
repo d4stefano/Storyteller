@@ -59,7 +59,7 @@
           </button>
         </div>
         <div v-for="(setting, index) in settings" :key="index" class="input-group">
-          <input v-model="setting.type" placeholder="Type (e.g., City, Era)">
+          <input v-model="setting.type" placeholder="Type (e.g., City, Time period)">
           <input v-model="setting.value" placeholder="Value">
           <button type="button" @click="removeSetting(index)" class="icon-button remove-button">
             <font-awesome-icon icon="trash-alt" />
