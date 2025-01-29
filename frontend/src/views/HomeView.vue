@@ -3,7 +3,7 @@
     <div class="home" ref="homeCard">
       <img alt="OWL-E logo" src="@/assets/logo.svg" class="logo">
       <h1>OWL-E: Building Worlds, Word by Word</h1>
-      <p>Like a wise owl with a digital heart, Owl-e helps you create captivating stories.</p>
+      <p>Like a wise owl with a digital heart, Owl-e uses AI to help you create captivating stories.</p>
       <form @submit.prevent="generateStory">
         <div class="clean-form-container">
           <button v-if="isFormUpdated" type="button" @click="resetForm" class="reset-button">
